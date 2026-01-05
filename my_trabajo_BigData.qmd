@@ -1,0 +1,896 @@
+---
+title: "Inflación: Manual de Inversión en Sudamérica"
+pagetitle: "Inflación: Manual de Inversión en Sudamérica"
+description: "Análisis y estrategias de inversión frente a la inflación en el contexto sudamericano."
+author: 
+  - name: "Lucas Osejo Martínez"
+    email: lucasosejo2@gmail.com
+date: 2026-01-07
+categories: [Trabajo Big Data, Inversión Sudamérica]
+title-block-banner: true
+title-block-banner-color: "skyblue3"
+
+toc: true
+toc-depth: 3
+smooth-scroll: true
+
+format: 
+  html:
+    code-fold: true
+    code-summary: "Mostrar código"
+    link-external-newwindow: true
+---
+
+
+## Intro 
+
+
+
+En este trabajo intentaremos descifrar cuál es la economía más atractiva para invertir dentro de la región sudamericana. Para ello vamos a centrar nuestro estudio en la inflación de cinco países seleccionados para el estudio: Argentina, Brasil, Chile, Colombia y Perú. Utilizaremos la inflación no solo porque determine el poder adquisitivo de los agentes económicos sino que representa el principal termómetro de la *estabilidad política y monetaria* de un país  
+
+
+
+Durante el trabajo, analizaremos la evolución de los precios en las principales economías de la región (2015-2023), su relación con el crecimiento económico y su compromiso con la innovación tecnológica (I+D).
+
+
+
+Una vez entendidos todos los puntos mencionados, se presentará una conclusión con la economía que el estudio consideró más atractiva para el inversor por su estabilidad y perspectiva de crecimiento a largo plazo.
+
+
+
+
+
+```{r}
+
+#| label: carga-datos-wbstats
+
+#| message: false
+
+
+
+library(tidyverse)
+
+library(wbstats)
+
+library(httr) 
+library(ggrepel)
+library(sf)
+library(rnaturalearth)
+
+
+set_config(timeout(120))
+
+
+
+#indicador de inflación (Consumer Price Index)
+
+indicadores <- c("inflacion" = "FP.CPI.TOTL.ZG")
+
+
+
+df_wb <- wb_data(
+
+  indicator = indicadores,
+
+  country = c("COL", "CHL", "PER", "ARG", "BRA"), 
+
+  start_date = 2015,
+
+  end_date = 2023
+
+)
+
+
+
+ 
+
+df_clean <- df_wb %>% 
+
+  select(country, date, inflacion) %>% 
+
+  rename(pais = country, year = date) %>% 
+
+  filter(!is.na(inflacion))
+
+df_pib <- wb_data(
+
+  indicator = "NY.GDP.MKTP.KD.ZG",
+
+  country = c("COL", "CHL", "PER", "ARG", "BRA"),
+
+  start_date = 2015,
+
+  end_date = 2023
+
+) %>% 
+
+  select(country, date, NY.GDP.MKTP.KD.ZG) %>% 
+
+  rename(pais = country, year = date, pib_growth = NY.GDP.MKTP.KD.ZG) %>% 
+
+  mutate(year = as.numeric(year))
+
+
+
+df_id_raw <- wb_data(
+
+    indicator = "GB.XPD.RSDV.GD.ZS", 
+
+    country = c("AR", "BR", "CL", "CO", "PE"), 
+
+    start_date = 2015, 
+
+    end_date = 2023)
+
+
+
+
+
+
+
+  df_id_extra <- df_id_raw %>%
+
+    rename(pib_id = GB.XPD.RSDV.GD.ZS,
+
+           pais = country,
+
+           year = date) %>%
+
+    select(pais, year, pib_id)
+
+
+
+
+# Guardo en datos
+
+if(!dir.exists("datos")) dir.create("datos")
+write_csv(df_clean, "datos/datos_inflacion.csv")
+write_csv(df_pib, "datos/datos_pib.csv")
+
+if(exists("df_id_raw")){
+  write_csv(df_id_raw, "datos/datos_id.csv")
+}
+
+
+```
+
+
+
+---
+
+
+
+## Mapa de la inflación 
+
+
+
+Como primer apartado vamos a situar los países del estudio en el mapa, distinguiendo a los que mayor inflación tienen con una mayor intensidad de color. 
+
+
+
+```{r}
+
+#| label: mapa-contexto
+
+#| message: false
+
+#| warning: false
+
+#| code-fold: true
+
+
+
+library(sf)
+
+library(rnaturalearth)
+
+
+
+
+
+latam_sf <- ne_countries(scale = "medium", continent = "South America", returnclass = "sf")
+
+
+
+# Corrrijo nombres para que coincidan
+
+df_mapa_corregido <- df_clean %>% 
+
+  filter(year == 2023) %>% 
+
+  mutate(pais = case_when(
+
+    pais == "Peru" ~ "Peru",
+
+    pais == "Brazil" ~ "Brazil",
+
+    pais == "Chile" ~ "Chile",
+
+    pais == "Colombia" ~ "Colombia",
+
+    pais == "Argentina" ~ "Argentina",
+
+    .default = pais
+
+  ))
+
+
+
+
+
+mapa_final <- latam_sf %>% 
+
+  left_join(df_mapa_corregido, by = c("name" = "pais"))
+
+
+
+
+
+mapa_final <- mapa_final %>% 
+
+  mutate(etiqueta = ifelse(!is.na(inflacion), 
+
+                           paste0(name, "\n", round(inflacion, 1), "%"), 
+
+                           ""))
+
+
+
+
+
+ggplot(mapa_final) +
+
+  geom_sf(aes(fill = inflacion), color = "white", size = 0.3) +
+
+  
+
+  
+
+  geom_text_repel(
+
+    aes(label = etiqueta, geometry = geometry),
+
+    stat = "sf_coordinates",
+
+    size = 3, 
+
+    color = "red", 
+
+    fontface = "bold",
+
+    min.segment.length = 0, 
+
+    box.padding = 0.5,      
+
+    point.padding = 0.5,
+
+    force = 2               
+
+  ) +
+
+  
+
+  scale_fill_viridis_c(
+
+    option = "magma", 
+
+    direction = -1,
+
+    na.value = "grey90", 
+
+    labels = scales::label_number(suffix = "%"),
+
+    name = "Inflación 2023"
+
+  ) +
+
+  labs(
+
+    title = "Inflación en Sudamérica",
+
+    subtitle = "Valores en % en 2023"
+
+  ) +
+
+  theme_void() +
+
+  theme(legend.position = "right")
+
+```
+
+El gráfico saca conclusiones claras. Podemos observar que Argentina está fuera de todos los parámetros. Cabe recalcar que el gráfico corresponde a gráficos del 2023, que coincide con el pico de hiperinflación en el país. Por lo demás, observamos que Colombia es el segundo país con más inflación, situandose lejos de los objetivos que plantean los bancos centrales del 2-3%. 
+
+---
+
+
+
+## Evolución anual de la inflación
+
+
+
+Vamos a entender qué ha ocurrido con la inflación en los últimos años con llos países seleccionados para el estudio.
+
+
+
+```{r}
+
+#| label: grafico-evolucion
+
+#| fig-cap: "Evolución anual de la inflación (%)"
+
+#| code-fold: true
+
+
+
+# Creo el gráfico base
+
+p1 <- ggplot(df_clean, aes(x = year, y = inflacion, color = pais, group = pais)) +
+
+  geom_line(linewidth = 1) +
+
+  geom_point(size = 2) +
+
+  
+
+  
+
+  scale_x_continuous(breaks = seq(2015, 2023, 2)) +
+
+  
+
+  
+
+  labs(
+
+    title = "Evolución de la Inflación en Sudamérica",
+
+    subtitle = "Comparativa entre Colombia y economías seleccionadas",
+
+    x = "Año",
+
+    y = "Variación Anual IPC (%)",
+
+    color = "País"
+
+  ) +
+
+  
+
+  theme_minimal() +
+
+  theme(legend.position = "bottom")
+
+
+
+p1
+
+```
+
+---
+
+
+
+Como podemos ver en el gráfico Argentina maneja una inflación mu superior al resto de economías de la región. Para comparar al resto haremos un grpafico en el que Argentina no esté.
+
+
+
+```{r}
+
+#| label: grafico-evolucion
+
+#| fig-cap: "Evolución anual de la inflación (%)"
+
+#| code-fold: true
+
+
+
+df_wb2 <- wb_data(
+
+  indicator = indicadores,
+
+  country = c("COL", "CHL", "PER", "BRA"), 
+
+  start_date = 2015,
+
+  end_date = 2023
+
+)
+
+
+
+# 
+
+df_clean2 <- df_wb2 %>% 
+
+  select(country, date, inflacion) %>% 
+
+  rename(pais = country, year = date) %>% 
+
+  filter(!is.na(inflacion))
+
+
+
+
+
+
+
+
+
+p1 <- ggplot(df_clean2, aes(x = year, y = inflacion, color = pais, group = pais)) +
+
+  geom_line(linewidth = 1) +
+
+  geom_point(size = 2) +
+
+  
+
+  
+
+  scale_x_continuous(breaks = seq(2015, 2023, 2)) +
+
+  
+
+  
+
+  labs(
+
+    title = "Evolución de la Inflación sin Argentina",
+
+    subtitle = "Comparativa entre Colombia y economías seleccionadas",
+
+    x = "Año",
+
+    y = "Variación Anual IPC (%)",
+
+    color = "País"
+
+  ) +
+
+  
+
+  theme_minimal() +
+
+  theme(legend.position = "bottom")
+
+
+
+p1
+
+
+
+```
+
+
+
+---
+
+
+
+Se comprueba que el resto de las economías seleccionadas han seguido un patrón muy similar. Caracterizado por una deflación durante la pandemia y una posterior subida de los precios.
+
+
+
+
+
+## Crecimiento vs Inflación
+
+
+
+A continuación vamos a comparar dos de las variables económicas más importantes. Nos preguntamos por la correlación entre el crecimiento económico y la inflación de un país. 
+
+
+
+
+
+```{r}
+
+#| label: descarga-pib
+
+#| message: false
+
+
+
+# Junto ambas variables (inlflacion y crecimiento con los datasets ya creados)
+
+df_final <- left_join(df_clean, df_pib, by = c("pais", "year"))
+
+
+
+
+
+
+
+
+
+ggplot(df_final, aes(x = pib_growth, y = inflacion, color = pais)) +
+
+  geom_point(size = 3, alpha = 0.7) +
+
+  
+
+ 
+
+  coord_cartesian(ylim = c(0, 50), xlim = c(-10, 15)) +
+
+  labs(
+
+    title = "Crecimiento vs. Inflación",
+
+    subtitle = "Análisis de la estabilidad económica regional",
+
+    x = "Crecimiento PIB Anual (%)",
+
+    y = "Inflación (%)"
+
+  ) +
+
+  theme_bw() 
+
+
+
+```
+
+
+
+
+
+De nuevo Argentina hace que el gráfico no nos ayude a entender la correlación, por lo que hacemos otro sin Argentina e intentamos trazar una linea de tendencia para ver que tanto se acercan los puntos.
+
+
+
+```{r}
+
+#| label: grafico-dispersion-corregido
+
+#| fig-cap: "Relación Crecimiento PIB vs. Inflación"
+
+#| code-fold: true
+
+
+
+
+
+df_analisis <- df_final %>% filter(inflacion < 6)
+
+
+
+
+
+ggplot(df_analisis, aes(x = pib_growth, y = inflacion, color = pais)) +
+
+  geom_point(size = 3, alpha = 0.7) +
+
+  geom_smooth(method = "lm", se = FALSE, color = "black", linetype = "dashed") +
+
+  scale_y_continuous(labels = scales::label_number(suffix = "%")) +
+
+  scale_x_continuous(labels = scales::label_number(suffix = "%")) +
+
+  labs(
+
+    title = "Crecimiento vs. Inflación: El modelo regional",
+
+    subtitle = "Tendencia calculada sin Argentina",
+
+    x = "Crecimiento PIB Anual",
+
+    y = "Inflación Anual",
+
+    color = "País"
+
+  ) +
+
+  theme_bw()
+
+```
+
+
+
+Respetando la variabilidad de algunos puntos, sí podemos marcar una tendencia de correlación entre ambas variables. Esto coincide con la teoría económica que nos dice que para crecer hay que soportar un poco de inflación. 
+
+
+
+
+
+## ¿Dónde invertir según los datos?
+
+
+
+Continuando con el estudio  de la inflación nos preguntamos cuál de los países que forman parte del estudio es más atractivo para invertir. Evidentemente es una decisión que requiere más datos de los que aquí tratamos pero vamos a intentarlo centrándonos en la inflación. Para este apartado no queremos valores totales de inflación, sino que estudiaremos la volatilidad en esta variable, ya que los inversores buscan estabilidad. 
+
+
+
+```{r}
+
+#| label: ranking-volatilidad
+
+#| code-fold: true
+
+
+
+
+
+tabla_estabilidad <- df_clean %>%
+
+  group_by(pais) %>%
+
+  summarise(
+
+    Media = mean(inflacion, na.rm = TRUE),
+
+    Maximo = max(inflacion, na.rm = TRUE),
+
+    Volatilidad = sd(inflacion, na.rm = TRUE) 
+
+  ) %>%
+
+  arrange(Volatilidad) # Ordenamos de menor a mayor volatilidad 
+
+
+
+# 2. Gráfico de Barras para el Ranking 
+
+ggplot(tabla_estabilidad, 
+
+       aes(x = reorder(pais, Volatilidad),
+
+           y = Volatilidad, fill = pais)) +
+
+  geom_col(show.legend = FALSE) +
+
+  coord_flip() + 
+
+  labs(
+
+    title = "Ranking de Volatilidad Económica",
+
+    subtitle = "Basado en la desviación estándar de la inflación (2015-2023)",
+
+    x = "País",
+
+    y = "Volatilidad (Desviación Estándar)"
+
+  ) +
+
+  theme_minimal() +
+
+  scale_fill_brewer(palette = "Reds")
+
+
+
+
+
+```
+
+
+
+El gráfico nos indica que Perú es el país con menor desviación estandar en esta variable, por lo que diremos que es el país más atractivo de cara a los inversores, ya que es el más predecible. 
+
+
+
+## Reacción al shock del Covid.
+
+
+
+Siguiendo la línea del inversor, resulta sumamente relevante entender cómo reacciona cada economía a los shocks. Dentro de nuestro rango de años, se encuentran años previos  años posteriores a la pandemia. Vamos a estudiar cómo afectó este shock a los precios en los países de estudio. Haremos la media de inflación en ambos periodos (Pre y Post Pandemia) y los compararemos dentro de cada país
+
+
+
+```{r}
+
+#| label: impacto-pandemia
+
+#| code-fold: true
+
+
+
+# Creo periodos y calculo medias 
+
+df_comparativa <- df_clean %>%
+
+  mutate(periodo = ifelse(year <= 2019, "Pre-Pandemia (15-19)", "Post-Pandemia (20-23)")) %>%
+
+  group_by(pais, periodo) %>%
+
+  summarise(inflacion_media = mean(inflacion, na.rm = TRUE))
+
+
+
+
+
+df_diff <- df_comparativa %>%
+
+  pivot_wider(names_from = periodo, values_from = inflacion_media) %>%
+
+  mutate(Incremento = `Post-Pandemia (20-23)` - `Pre-Pandemia (15-19)`)
+
+
+
+
+
+ggplot(df_comparativa, 
+
+       aes(x = inflacion_media,
+
+           y = reorder(pais, inflacion_media))) +
+
+  geom_line(aes(group = pais), color = "grey") + 
+
+  geom_point(aes(color = periodo), size = 4) +
+
+  scale_color_manual(values = c("Pre-Pandemia (15-19)" = "skyblue", 
+
+                                 "Post-Pandemia (20-23)" = "red")) +
+
+  # Escala logarítmica tras problema con Argentina
+
+  scale_x_log10(labels = scales::label_number(suffix = "%")) +
+
+  labs(
+
+    title = "Cambio en el Nivel de Precios",
+
+    subtitle = "Comparativa de medias pre y post shock COVID-19",
+
+    x = "Inflación Media (Escala Logarítmica)",
+
+    y = "País",
+
+    color = "Periodo"
+
+  ) +
+
+  theme_minimal() +
+
+  theme(legend.position = "top")
+
+
+
+
+
+```
+
+En el gráfico se observa que, con el paso de los años, la inflación ha crecido en todas las economías analizadas. Este es un efecto natural derivado de los ciclos económicos. Dentro de este contexto, Brasil destaca por ser la economía que menor cambio presenta en su estructura de precios. Esta estabilidad convierte a Brasil en el mercado más interesante de cara a posibles inversiones. Una inflación controlada reduce la incertidumbre, por lo que en este apartado diremos que es la elegida para invertir.
+
+
+
+## I + D. El futuro de una economía
+
+
+
+Para un inversor es de suma importancia que la economía apueste por el crecimiento a largo plazo, por lo que resulta fundamental echar un vistazo a la inversión en I+D de los países de estudio.
+
+
+
+```{r}
+
+
+# Aumentamos el tiempo de espera a 60 segundos por problemas con Banco
+
+set_config(timeout(60))
+
+
+
+
+
+
+
+  df_id_raw <- wb_data(
+
+    indicator = "GB.XPD.RSDV.GD.ZS", 
+
+    country = c("AR", "BR", "CL", "CO", "PE"), 
+
+    start_date = 2015, 
+
+    end_date = 2023)
+
+
+
+
+
+
+
+  df_id_extra <- df_id_raw %>%
+
+    rename(pib_id = GB.XPD.RSDV.GD.ZS,
+
+           pais = country,
+
+           year = date) %>%
+
+    select(pais, year, pib_id)
+
+
+
+
+
+
+
+```
+
+
+
+
+
+```{r}
+
+
+
+#| label: inversion-id
+
+#| code-fold: true
+
+
+
+ 
+
+df_id_final <- df_id_extra %>% 
+
+  filter(!is.na(pib_id)) %>% 
+
+  group_by(pais) %>% 
+
+  filter(year == max(year)) %>% 
+
+  ungroup()
+
+
+
+
+
+ggplot(df_id_final, 
+
+       aes(x = reorder(pais, pib_id), 
+
+           y = pib_id, fill = pib_id)) +
+
+  geom_col(width = 0.6) +
+
+  geom_text(aes(label = paste0(round(pib_id, 2), "%")), 
+
+            vjust = -0.5, size = 3.5, fontface = "bold") +
+
+  scale_fill_gradient(low = "skyblue", high = "blue") +
+
+  labs(
+
+    title = "Inversión en I+D (% del PIB)",
+
+    subtitle = "Compromiso con la innovación ",
+
+    x = "País",
+
+    y = "% del PIB"
+
+  ) +
+
+  theme_minimal() +
+
+  theme(legend.position = "none")
+
+
+
+```
+
+En general la destinación de porcentaje de PIB para inversión en I+D en los países de estudio resulta baja. Brasil, es por bastante la economía que más invierte en I+D por lo que se lleva el visto bueno de este apartado. 
+
+
+
+## Conclusión
+
+
+
+Tras analizar los datos, la recomendación para cualquier inversor es clara: Brasil es el mejor país para invertir en Sudamérica actualmente. Esta decisión se basa en tres pilares que hemos visto en los gráficos:
+
+
+
+Estabilidad: Aunque Perú es el país con menos cambios, Brasil ocupa un sólido segundo lugar. Esto significa que los precios no sufren cambios drásticos, lo que da mucha seguridad a quien pone su dinero allí.
+
+
+
+Manejo de los shocks: Como vimos en el análisis de la pandemia, Brasil controló muy bien la subida de precios frente a crisis mundiales, demostrando que su sistema económico es resistente.
+
+
+
+Mira hacia el futuro: Es, con diferencia, el país que más dinero dedica a I+D (Investigación y Desarrollo). Esto indica que no solo se preocupa por el día a día, sino por crecer tecnológicamente, algo fundamental para que una inversión sea rentable a largo plazo.
